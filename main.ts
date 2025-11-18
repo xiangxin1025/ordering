@@ -138,4 +138,60 @@ namespace PCA9685 {
             setPwm(i, 0, 0)
         }
     }
+
+
+    /**
+     * 设置指定通道为数字高/低电平（用于 LED 等）
+     * @param channel 通道 (0~15)
+     * @param value true 为高电平（亮），false 为低电平（灭）
+     */
+    //% block="Digital write channel %channel|to %value"
+    //% channel.min=0 channel.max=15
+    //% value.shadow="toggleOnOff"
+    //% blockGap=8
+    export function digitalWrite(channel: number, value: boolean): void {
+        if (!initialized) init();
+        if (channel < 0 || channel > 15) return;
+        if (value) {
+            setPwm(channel, 0, 4095); // 全开 ≈ 高电平
+        } else {
+            setPwm(channel, 0, 0);    // 全关 = 低电平
+        }
+    }
+
+    /**
+     * 控制 HT7K1311 电机：正转
+     * IN1 = HIGH, IN2 = LOW
+     */
+    //% block="HT7K1311 Motor Forward"
+    //% blockGap=8
+    export function motorForward(): void {
+        if (!initialized) init();
+        digitalWrite(11, true);   // IN1 = HIGH
+        digitalWrite(12, false);  // IN2 = LOW
+    }
+
+    /**
+     * 控制 HT7K1311 电机：反转
+     * IN1 = LOW, IN2 = HIGH
+     */
+    //% block="HT7K1311 Motor Reverse"
+    //% blockGap=8
+    export function motorReverse(): void {
+        if (!initialized) init();
+        digitalWrite(11, false);  // IN1 = LOW
+        digitalWrite(12, true);   // IN2 = HIGH
+    }
+
+    /**
+     * 控制 HT7K1311 电机：停止（刹车）
+     * IN1 = LOW, IN2 = LOW
+     */
+    //% block="HT7K1311 Motor Stop"
+    //% blockGap=8
+    export function motorStop(): void {
+        if (!initialized) init();
+        digitalWrite(11, false);
+        digitalWrite(12, false);
+    }
 }
