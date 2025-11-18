@@ -1,4 +1,4 @@
-//% weight=100 color=#0fbc11 icon="" block="xia_mi Board"
+//% weight=100 color=#0fbc11 icon="😁" block="xia_mi Board"
 namespace xiamiBoard {
 
     // ======================
