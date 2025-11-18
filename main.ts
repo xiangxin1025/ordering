@@ -1,197 +1,868 @@
+enum MOTOR {
+    //% block="M1"
+    M1=0X00,
+    //% block="M2"
+    M2=0X02,
+    //% block="M3"
+    M3=0X04,
+    //%block="M4"
+    M4=0X06,
+    //%block="ALL"
+    ALL=0X08
+}
+enum MOTOR1 {
+    //% block="M1"
+    M1=0X00,
+    //% block="M2"
+    M2=0X02,
+    //% block="M3"
+    M3=0X04,
+    //%block="M4"
+    M4=0X06,
+}
 
-/**
- * 独立 PCA9685 PWM 驱动模块
- * I2C 地址默认为 0x40
- * 支持 16 路 PWM 输出，可用于舵机、LED、电机等
- */
+enum DIRECTION {
+    //% block="CW"
+    CW=0X00,
+    //% block="CCW"
+    CCW=0X01
+}
 
-//% weight=100 color=#0078D7 icon="\uf0e4"
-namespace PCA9685 {
-    const PCA9685_ADDRESS = 0x40
-    const MODE1 = 0x00
-    const MODE2 = 0x01
-    const PWM_CH = 0x06
-    const PRESCALE = 0xFE
+enum SWITCH{
+    //% block="ON"
+    ON=0X01,
+    //% block="OFF"
+    OFF=0X00
+}
 
-    let initialized = false
+enum STATE{
+    //% block="Speed"
+    SPEED,
+    //% block="Direction"
+    DIR
+}
 
-    function i2cwrite(addr: number, reg: number, value: number) {
-        let buf = pins.createBuffer(2)
-        buf[0] = reg
-        buf[1] = value
-        pins.i2cWriteBuffer(addr, buf)
-    }
+enum LED {
+    //% block="Red"
+    RD=0X8,
+    //% block="Yellow"
+    YW=0X09,
+    //%block="Green"
+    GN=0X0A
+}
 
-    function i2cread(addr: number, reg: number): number {
-        pins.i2cWriteNumber(addr, reg, NumberFormat.UInt8BE)
-        return pins.i2cReadNumber(addr, NumberFormat.UInt8BE)
-    }
+enum ALIGNMENT{
+    //% block="2"
+    TOW = 2,
+    //% block="3"
+    THREE = 3,
+    //% block="4"
+    FOUR = 4,
+    //% block="5"
+    FIVE = 5
+}
 
+enum RELAY{
+    //% block="Actuation"
+    CLOSE = 0x01,
+    //% block="Release"
+    DISCON = 0x00
+}
+
+enum RELAYVERSION {
+    //% block="V1"
+    V1 = 0x01,
+    //% block="V2"
+    V2 = 0x00
+}
+
+enum SENSOR{
+    //% block="AHT20(V1)"
+    AHT20,
+    //% block="SHTC3(V2)"
+    SHTC3
+
+}
+
+enum PARA{
+    //% block="Temperature"
+    TEMP,
+    //% block="Humidity"
+    HUM
+
+}
+//094
+//1d8
+//1e3
+//% weight=100 color=#0fbc11 icon="" block="xia_mi Board"
+namespace xiamiBoard{
+
+    const i2cAddr = 0x10;
+    let irstate:number;
+    let state:number;
     /**
-     * 初始化 PCA9685 芯片
+     * 控制电机运行
      */
-    function init(): void {
-        if (initialized) return;
-
-        // 直接操作 I2C，不调用 setPwm
-        i2cwrite(PCA9685_ADDRESS, MODE1, 0x00); // Normal mode
-        setFrequency(50);
-
-        // 手动清零所有 PWM 通道（不通过 setPwm）
-        for (let i = 0; i < 16; i++) {
-            let buf = pins.createBuffer(5);
-            buf[0] = PWM_CH + 4 * i;
-            buf[1] = 0; // on low
-            buf[2] = 0; // on high
-            buf[3] = 0; // off low
-            buf[4] = 0; // off high
-            pins.i2cWriteBuffer(PCA9685_ADDRESS, buf);
+    //% weight=100
+    //% blockId=pinpong_motorRun block="motor %index move %dir at speed %speed"
+    //% speed.min=0 speed.max=255
+    export function motorRun(index:MOTOR, dir:DIRECTION, speed:number): void {
+        //pins.i2cWriteNumber(i2cAddr, index, NumberFormat.Int8LE)
+        if(index != 0x08){
+            let buf=pins.createBuffer(3);
+            buf[0]=index;
+            buf[1]=dir;
+            buf[2]=speed;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+        }else{
+            let buf=pins.createBuffer(3);
+            buf[0]=0x00;
+            buf[1]=dir;
+            buf[2]=speed;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x02;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x04;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x06;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
         }
-
-        initialized = true;
+        
     }
-
     /**
-     * 设置 PWM 频率（Hz）
-     * @param freq 频率，单位 Hz，建议范围 24~1526
+     * 控制电机停止
      */
-    export function setFrequency(freq: number): void {
-        // 计算预分频值：prescale = round(osc_clock / (4096 * freq)) - 1
-        // PCA9685 内部时钟为 25MHz
-        let prescaleval = 25000000.0
-        prescaleval /= 4096.0
-        prescaleval /= freq
-        prescaleval -= 1.0
-        let prescale = Math.clamp(3, 255, Math.round(prescaleval))
-
-        let oldmode = i2cread(PCA9685_ADDRESS, MODE1)
-        let newmode = (oldmode & 0x7F) | 0x10 // sleep
-        i2cwrite(PCA9685_ADDRESS, MODE1, newmode) // go to sleep
-        i2cwrite(PCA9685_ADDRESS, PRESCALE, prescale) // set prescaler
-        i2cwrite(PCA9685_ADDRESS, MODE1, oldmode)
-        control.waitMicros(5000)
-        i2cwrite(PCA9685_ADDRESS, MODE1, oldmode | 0xA1) // auto-increment + restart
-    }
-
-    /**
-     * 设置指定通道的 PWM 占空比
-     * @param channel 通道号 (0~15)
-     * @param on 开始计数点 (0~4095)
-     * @param off 结束计数点 (0~4095)
-     */
-    export function setPwm(channel: number, on: number, off: number): void {
-        if (channel < 0 || channel > 15) return
-        if (!initialized) init()
-
-        on = Math.clamp(0, 4095, on)
-        off = Math.clamp(0, 4095, off)
-
-        let buf = pins.createBuffer(5)
-        buf[0] = PWM_CH + 4 * channel
-        buf[1] = on & 0xFF
-        buf[2] = (on >> 8) & 0xFF
-        buf[3] = off & 0xFF
-        buf[4] = (off >> 8) & 0xFF
-        pins.i2cWriteBuffer(PCA9685_ADDRESS, buf)
-    }
-
-    /**
-     * 设置通道为固定占空比（简化接口）
-     * @param channel 通道 (0~15)
-     * @param duty 占空比 (0.0 ~ 1.0)
-     */
-    //% block="Set PWM channel %channel|duty %duty"
-    //% channel.min=0 channel.max=15
-    //% duty.min=0 duty.max=1
-    //% blockGap=8
-    export function setDuty(channel: number, duty: number): void {
-        duty = Math.clamp(0, 1, duty)
-        let off = Math.round(duty * 4095)
-        setPwm(channel, 0, off)
-    }
-
-    /**
-     * 设置舵机角度（假设频率为 50Hz）
-     * @param channel 通道 (0~15)
-     * @param degree 角度 (0~180)
-     */
-    //% block="Servo channel %channel|to %degree °"
-    //% channel.min=0 channel.max=15
-    //% degree.min=0 degree.max=180
-    export function servoWrite(channel: number, degree: number): void {
-        if (!initialized) init()
-        degree = Math.clamp(0, 180, degree)
-        // 脉宽 0.6ms (0°) ~ 2.4ms (180°) → 150 ~ 600 in 4096@50Hz
-        // 更精确：us = 600 + degree * 10
-        let us = 600 + degree * 10  // 600~2400 μs
-        let value = (us * 4096) / 20000  // 20000μs = 20ms 周期
-        setPwm(channel, 0, Math.round(value))
-    }
-
-    /**
-     * 停止所有输出（设为 0）
-     */
-    //% block="Stop all PCA9685 channels"
-    export function stopAll(): void {
-        if (!initialized) init()
-        for (let i = 0; i < 16; i++) {
-            setPwm(i, 0, 0)
+    //% weight=99
+    //% blockId=pinpong_motorStop block="motor %index stop"
+    export function motorStop(index:MOTOR){
+        if(index != 0x08){
+            let buf=pins.createBuffer(3);
+            buf[0]=index;
+            buf[1]=0;
+            buf[2]=0;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+        }else{
+            let buf=pins.createBuffer(3);
+            buf[0]=0x00;
+            buf[1]=0;
+            buf[2]=0;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x02;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x04;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
+            buf[0]=0x06;
+            pins.i2cWriteBuffer(i2cAddr, buf)
+            basic.pause(50)
         }
     }
-
-
     /**
-     * 设置指定通道为数字高/低电平（用于 LED 等）
-     * @param channel 通道 (0~15)
-     * @param value true 为高电平（亮），false 为低电平（灭）
+     * 控制交通灯
      */
-    //% block="Digital write channel %channel|to %value"
-    //% channel.min=0 channel.max=15
-    //% value.shadow="toggleOnOff"
-    //% blockGap=8
-    export function digitalWrite(channel: number, value: boolean): void {
-        if (!initialized) init();
-        if (channel < 0 || channel > 15) return;
-        if (value) {
-            setPwm(channel, 0, 4095); // 全开 ≈ 高电平
+    //% weight=98
+    //% state.min=0 state.max=1
+    //% state1.min=0 state1.max=1
+    //% state2.min=0 state2.max=1
+    //% blockId=pinpong_LED block="set traffic lights Red LED %state Yellow LED %state1 Green LED %state2"
+    export function LED(state:number,state1:number,state2:number){
+        let buf=pins.createBuffer(2);
+        buf[0]=0X8;
+        buf[1]=state;
+        pins.i2cWriteBuffer(i2cAddr, buf);
+        buf[0]=0X09;
+        buf[1]=state1;
+        pins.i2cWriteBuffer(i2cAddr, buf);
+        buf[0]=0X0A;
+        buf[1]=state2;
+        pins.i2cWriteBuffer(i2cAddr, buf);
+    }
+    /**
+     * 获取旋转编码器数据
+     */
+    //% weight=97
+    //% blockId=pinpong_readAngle block="obtain angle sensor data"
+    export function readAngle():number{
+        pins.i2cWriteNumber(i2cAddr, 0X0B, NumberFormat.Int8LE);
+        let buf = pins.i2cReadBuffer(i2cAddr, 2)
+        let data =buf[0]<<8|buf[1]; 
+        return data;
+    }
+    /**
+     * 获取火焰传感器数据
+     */
+    //% weight=96
+    //% blockId=pinpong_readFlame block="get fire sensor number"
+    export function readFlre():number{
+        pins.i2cWriteNumber(i2cAddr, 0x0D, NumberFormat.Int8LE);
+        let buf = pins.i2cReadBuffer(i2cAddr, 2);
+        let data = buf[0]<<8|buf[1];
+        return data;
+    }
+    // /**
+    //  * 获取电机方向和速度
+    //  */
+    // //% weight=95
+    // //% blockId=pinpong_motorState block="get motor %motor state %state"
+    // export function motorState(motor:MOTOR1, state:STATE):number{
+    //     pins.i2cWriteNumber(i2cAddr, motor, NumberFormat.Int8LE);
+    //     let buf = pins.i2cReadBuffer(i2cAddr, 2);
+    //     let data;
+    //     switch(state){
+    //         case STATE.SPEED: data = buf[0];break;
+    //         case STATE.DIR: data = buf[1];break;
+    //         default:break;
+    //     }
+    //     return data;
+    // }
+    // /**
+    //  * 获取交通灯状态
+    //  */
+    // //% weight=94
+    // //%blockId=pinpong_LDEState block="get traffic light status %color"
+    // export function LEDState(color:LED):number{
+    //     pins.i2cWriteNumber(i2cAddr, color, NumberFormat.Int8LE);
+    //     return pins.i2cReadNumber(i2cAddr, NumberFormat.Int8LE);
+    // }
+    /**
+     * 控制继电器
+     */
+    //% weight=93
+    //%blockId=pinpong_setRelay block="relay %version %state"
+    export function setRelay(version:RELAYVERSION, state:RELAY){
+        // let buf = pins.createBuffer(2);
+        // buf[0] = 0X13;
+        // buf[1] = state;
+        // pins.i2cWriteBuffer(i2cAddr, buf);
+        if (version == RELAYVERSION.V1)
+        {
+            switch (state) {
+                case RELAY.CLOSE: pins.digitalWritePin(DigitalPin.P9, 1); break;
+                case RELAY.DISCON: pins.digitalWritePin(DigitalPin.P9, 0); break;
+                default: break;
+            }
         } else {
-            setPwm(channel, 0, 0);    // 全关 = 低电平
+            let buf = pins.createBuffer(2);
+            buf[0] = 0X13;
+            buf[1] = state;
+            pins.i2cWriteBuffer(i2cAddr, buf);
+        }
+    }
+     /**
+     * 控制继电器
+     */
+    //% weight=5
+    //%blockId=pinpong_setRelayTest block="relay %state (test)"
+    //% deprecated=true
+    export function setRelayTest(state:RELAY){
+        let buf = pins.createBuffer(2);
+        buf[0] = 0X13;
+        buf[1] = state;
+        pins.i2cWriteBuffer(i2cAddr, buf);
+    }
+    /**
+     * 获取超声波数据
+     */
+    //%weight=92
+    //% blockId=ultrasonic_sensor block="get ultrasonic sensor (cm)"
+    export function Ultrasonic(maxCmDistance = 500): number {
+        let d
+        pins.digitalWritePin(DigitalPin.P0, 1);
+        basic.pause(1)
+        pins.digitalWritePin(DigitalPin.P0, 0);
+        if (pins.digitalReadPin(DigitalPin.P1) == 0) {
+            pins.digitalWritePin(DigitalPin.P0, 0);
+            //sleep_us(2);
+            pins.digitalWritePin(DigitalPin.P0, 1);
+            // sleep_us(10);
+            pins.digitalWritePin(DigitalPin.P0, 0);
+            d = pins.pulseIn(DigitalPin.P1, PulseValue.High, maxCmDistance * 58)//readPulseIn(1);
+        } else {
+            pins.digitalWritePin(DigitalPin.P0, 1);
+            pins.digitalWritePin(DigitalPin.P0, 0);
+            d = pins.pulseIn(DigitalPin.P1, PulseValue.Low, maxCmDistance * 58);//readPulseIn(0);
+        }
+        let x = d / 59;
+        if (x <= 0 || x > 500) {
+            return 0;
+        }
+        return Math.round(x) ;
+    }
+
+    // function mypulseIn(pin: DigitalPin, value: number, maxDuration: number): number {
+    //     let tick = control.micros();
+    //     let maxd = maxDuration;
+    //     while (pins.digitalReadPin(pin) != value) {
+    //         if (control.micros() - tick > maxd)
+    //             return 0;
+    //     }
+    //     let start = control.micros();
+    //     while (pins.digitalReadPin(pin) == value) {
+    //         if (control.micros() - tick > maxd)
+    //             return 0;
+    //     }
+    //     let end = control.micros();
+    //     return end - start;
+    // }
+    
+    /**
+    * Initialize OLED, just put the module in the module at the beginning of the code, no need to reuse
+    */
+    function initDisplay(): void {
+        OLEDcmd(0xAE);  // Set display OFF
+        OLEDcmd(0xD5);  // Set Display Clock Divide Ratio / OSC Frequency 0xD4
+        OLEDcmd(0x80);  // Display Clock Divide Ratio / OSC Frequency 
+        OLEDcmd(0xA8);  // Set Multiplex Ratio
+        OLEDcmd(0x3F);  // Multiplex Ratio for 128x64 (64-1)
+        OLEDcmd(0xD3);  // Set Display Offset
+        OLEDcmd(0x00);  // Display Offset
+        OLEDcmd(0x40);  // Set Display Start Line
+        OLEDcmd(0x8D);  // Set Charge Pump
+        OLEDcmd(0x14);  // Charge Pump (0x10 External, 0x14 Internal DC/DC)
+        OLEDcmd(0xA1);  // Set Segment Re-Map
+        OLEDcmd(0xC8);  // Set Com Output Scan Direction
+        OLEDcmd(0xDA);  // Set COM Hardware Configuration
+        OLEDcmd(0x12);  // COM Hardware Configuration
+        OLEDcmd(0x81);  // Set Contrast
+        OLEDcmd(0xCF);  // Contrast
+        OLEDcmd(0xD9);  // Set Pre-Charge Period
+        OLEDcmd(0xF1);  // Set Pre-Charge Period (0x22 External, 0xF1 Internal)
+        OLEDcmd(0xDB);  // Set VCOMH Deselect Level
+        OLEDcmd(0x40);  // VCOMH Deselect Level
+        OLEDcmd(0xA4);  // Set all pixels OFF
+        OLEDcmd(0xA6);  // Set display not inverted
+        OLEDcmd(0xAF);  // Set display On
+        OLEDclear();
+    }
+    
+
+    
+    function OLEDsetText(row: number, column: number) {
+        let r = row;
+        let c = column;
+        if (row < 0) { r = 0 }
+        if (column < 0) { c = 0 }
+        if (row > 7) { r = 7 }
+        if (column > 15) { c = 15 }
+
+        OLEDcmd(0xB0 + r);            //set page address
+        OLEDcmd(0x00 + (8 * c & 0x0F));  //set column lower address
+        OLEDcmd(0x10 + ((8 * c >> 4) & 0x0F));   //set column higher address
+    }
+
+    function OLEDputChar(c: string) {
+        let c1 = c.charCodeAt(0);
+        OLEDwriteCustomChar(basicFont[c1 - 32]);
+    }
+    /**
+     * @param line line num (8 pixels per line), eg: 0
+     * @param text value , eg: DFRobot
+     * OLED  display string
+     */
+    //% weight=90
+    //% text.defl="DFRobot"
+    //% line.min=0 line.max=7
+    //% column.min=0 column.max=15
+    //% block="OLED show text %text on line %line column %column"
+    export function OLEDshowUserText(text: string,line: number,column:number): void {
+        OLEDsetText(line, column);
+        if(text.length>16){
+            let newtext = text.substr(0,16);
+            for (let c of newtext)
+                OLEDputChar(c);
+        }else{
+            if(text.length>(16-column)){
+                let newtext = text.substr(0,(16-column));
+                for (let c of newtext)
+                    OLEDputChar(c);
+            }else{
+                for (let c of text)
+                    OLEDputChar(c);
+            }
+            
+        }
+        
+        
+    }
+	/**
+     * @param line line num (8 pixels per line), eg: 0
+     * @param n value , eg: 2019
+     * OLED  shows the number
+     */
+    //% weight=89
+    //% line.min=0 line.max=7
+    //% column.min=0 column.max=15
+    //% block="OLED show number %n on line %line column %column"
+
+    export function OLEDshowUserNumber(n: number,line: number, column:number): void {
+        xiamiBoard.OLEDshowUserText("" + n,line, column);
+    }
+
+    /**
+     * OLED clear
+     */
+    //% weight=88
+    //% block="clear OLED"
+    export function OLEDclear() {
+        for (let j = 0; j < 8; j++) {
+            OLEDsetText(j, 0);
+                for (let i=0; i < 16; i++)  //clear all columns
+                {
+                    OLEDputChar(' ');
+                }
+        }
+        OLEDsetText(0, 0);
+    }
+    //% weight=87
+    //% block="clear OLED line %line column %column1 to %column2"
+    //% line.min=0 line.max=7
+    //% column1.min=0 column1.max=15
+    //% column2.min=0 column2.max=15
+    export function clear(line:number,column1:number,column2:number){
+        OLEDsetText(line, column1);
+        for (let i=0; i < ((column2-column1)+1); i++) {
+            OLEDputChar(' ');
         }
     }
 
-    /**
-     * 控制 HT7K1311 电机：正转
-     * IN1 = HIGH, IN2 = LOW
+    function OLEDwriteCustomChar(c: string) {
+        for (let i = 0; i < 8; i++) {
+            OLEDwriteData(c.charCodeAt(i));
+        }
+    }
+
+
+    function OLEDcmd(c: number) {
+        pins.i2cWriteNumber(0x3C, c, NumberFormat.UInt16BE);
+    }
+
+
+    function OLEDwriteData(n: number) {
+        let b = n;
+        if (n < 0) { n = 0 }
+        if (n > 255) { n = 255 }
+
+        pins.i2cWriteNumber(0x3C, 0x4000 + b, NumberFormat.UInt16BE);
+    }
+
+    const DISPLAY_OFF = 0xAE;
+    const DISPLAY_ON = 0xAF;
+    const basicFont: string[] = [
+        "\x00\x00\x00\x00\x00\x00\x00\x00", // " "
+        "\x00\x00\x5F\x00\x00\x00\x00\x00", // "!"
+        "\x00\x00\x07\x00\x07\x00\x00\x00", // """
+        "\x00\x14\x7F\x14\x7F\x14\x00\x00", // "#"
+        "\x00\x24\x2A\x7F\x2A\x12\x00\x00", // "$"
+        "\x00\x23\x13\x08\x64\x62\x00\x00", // "%"
+        "\x00\x36\x49\x55\x22\x50\x00\x00", // "&"
+        "\x00\x00\x05\x03\x00\x00\x00\x00", // "'"
+        "\x00\x1C\x22\x41\x00\x00\x00\x00", // "("
+        "\x00\x41\x22\x1C\x00\x00\x00\x00", // ")"
+        "\x00\x08\x2A\x1C\x2A\x08\x00\x00", // "*"
+        "\x00\x08\x08\x3E\x08\x08\x00\x00", // "+"
+        "\x00\xA0\x60\x00\x00\x00\x00\x00", // ","
+        "\x00\x08\x08\x08\x08\x08\x00\x00", // "-"
+        "\x00\x60\x60\x00\x00\x00\x00\x00", // "."
+        "\x00\x20\x10\x08\x04\x02\x00\x00", // "/"
+        "\x00\x3E\x51\x49\x45\x3E\x00\x00", // "0"
+        "\x00\x00\x42\x7F\x40\x00\x00\x00", // "1"
+        "\x00\x62\x51\x49\x49\x46\x00\x00", // "2"
+        "\x00\x22\x41\x49\x49\x36\x00\x00", // "3"
+        "\x00\x18\x14\x12\x7F\x10\x00\x00", // "4"
+        "\x00\x27\x45\x45\x45\x39\x00\x00", // "5"
+        "\x00\x3C\x4A\x49\x49\x30\x00\x00", // "6"
+        "\x00\x01\x71\x09\x05\x03\x00\x00", // "7"
+        "\x00\x36\x49\x49\x49\x36\x00\x00", // "8"
+        "\x00\x06\x49\x49\x29\x1E\x00\x00", // "9"
+        "\x00\x00\x36\x36\x00\x00\x00\x00", // ":"
+        "\x00\x00\xAC\x6C\x00\x00\x00\x00", // ";"
+        "\x00\x08\x14\x22\x41\x00\x00\x00", // "<"
+        "\x00\x14\x14\x14\x14\x14\x00\x00", // "="
+        "\x00\x41\x22\x14\x08\x00\x00\x00", // ">"
+        "\x00\x02\x01\x51\x09\x06\x00\x00", // "?"
+        "\x00\x32\x49\x79\x41\x3E\x00\x00", // "@"
+        "\x00\x7E\x09\x09\x09\x7E\x00\x00", // "A"
+        "\x00\x7F\x49\x49\x49\x36\x00\x00", // "B"
+        "\x00\x3E\x41\x41\x41\x22\x00\x00", // "C"
+        "\x00\x7F\x41\x41\x22\x1C\x00\x00", // "D"
+        "\x00\x7F\x49\x49\x49\x41\x00\x00", // "E"
+        "\x00\x7F\x09\x09\x09\x01\x00\x00", // "F"
+        "\x00\x3E\x41\x41\x51\x72\x00\x00", // "G"
+        "\x00\x7F\x08\x08\x08\x7F\x00\x00", // "H"
+        "\x00\x41\x7F\x41\x00\x00\x00\x00", // "I"
+        "\x00\x20\x40\x41\x3F\x01\x00\x00", // "J"
+        "\x00\x7F\x08\x14\x22\x41\x00\x00", // "K"
+        "\x00\x7F\x40\x40\x40\x40\x00\x00", // "L"
+        "\x00\x7F\x02\x0C\x02\x7F\x00\x00", // "M"
+        "\x00\x7F\x04\x08\x10\x7F\x00\x00", // "N"
+        "\x00\x3E\x41\x41\x41\x3E\x00\x00", // "O"
+        "\x00\x7F\x09\x09\x09\x06\x00\x00", // "P"
+        "\x00\x3E\x41\x51\x21\x5E\x00\x00", // "Q"
+        "\x00\x7F\x09\x19\x29\x46\x00\x00", // "R"
+        "\x00\x26\x49\x49\x49\x32\x00\x00", // "S"
+        "\x00\x01\x01\x7F\x01\x01\x00\x00", // "T"
+        "\x00\x3F\x40\x40\x40\x3F\x00\x00", // "U"
+        "\x00\x1F\x20\x40\x20\x1F\x00\x00", // "V"
+        "\x00\x3F\x40\x38\x40\x3F\x00\x00", // "W"
+        "\x00\x63\x14\x08\x14\x63\x00\x00", // "X"
+        "\x00\x03\x04\x78\x04\x03\x00\x00", // "Y"
+        "\x00\x61\x51\x49\x45\x43\x00\x00", // "Z"
+        "\x00\x7F\x41\x41\x00\x00\x00\x00", // """
+        "\x00\x02\x04\x08\x10\x20\x00\x00", // "\"
+        "\x00\x41\x41\x7F\x00\x00\x00\x00", // """
+        "\x00\x04\x02\x01\x02\x04\x00\x00", // "^"
+        "\x00\x80\x80\x80\x80\x80\x00\x00", // "_"
+        "\x00\x01\x02\x04\x00\x00\x00\x00", // "`"
+        "\x00\x20\x54\x54\x54\x78\x00\x00", // "a"
+        "\x00\x7F\x48\x44\x44\x38\x00\x00", // "b"
+        "\x00\x38\x44\x44\x28\x00\x00\x00", // "c"
+        "\x00\x38\x44\x44\x48\x7F\x00\x00", // "d"
+        "\x00\x38\x54\x54\x54\x18\x00\x00", // "e"
+        "\x00\x08\x7E\x09\x02\x00\x00\x00", // "f"
+        "\x00\x18\xA4\xA4\xA4\x7C\x00\x00", // "g"
+        "\x00\x7F\x08\x04\x04\x78\x00\x00", // "h"
+        "\x00\x00\x7D\x00\x00\x00\x00\x00", // "i"
+        "\x00\x80\x84\x7D\x00\x00\x00\x00", // "j"
+        "\x00\x7F\x10\x28\x44\x00\x00\x00", // "k"
+        "\x00\x41\x7F\x40\x00\x00\x00\x00", // "l"
+        "\x00\x7C\x04\x18\x04\x78\x00\x00", // "m"
+        "\x00\x7C\x08\x04\x7C\x00\x00\x00", // "n"
+        "\x00\x38\x44\x44\x38\x00\x00\x00", // "o"
+        "\x00\xFC\x24\x24\x18\x00\x00\x00", // "p"
+        "\x00\x18\x24\x24\xFC\x00\x00\x00", // "q"
+        "\x00\x00\x7C\x08\x04\x00\x00\x00", // "r"
+        "\x00\x48\x54\x54\x24\x00\x00\x00", // "s"
+        "\x00\x04\x7F\x44\x00\x00\x00\x00", // "t"
+        "\x00\x3C\x40\x40\x7C\x00\x00\x00", // "u"
+        "\x00\x1C\x20\x40\x20\x1C\x00\x00", // "v"
+        "\x00\x3C\x40\x30\x40\x3C\x00\x00", // "w"
+        "\x00\x44\x28\x10\x28\x44\x00\x00", // "x"
+        "\x00\x1C\xA0\xA0\x7C\x00\x00\x00", // "y"
+        "\x00\x44\x64\x54\x4C\x44\x00\x00", // "z"
+        "\x00\x08\x36\x41\x00\x00\x00\x00", // "{"
+        "\x00\x00\x7F\x00\x00\x00\x00\x00", // "|"
+        "\x00\x41\x36\x08\x00\x00\x00\x00", // "}"
+        "\x00\x02\x01\x01\x02\x01\x00\x00"  // "~"
+    ];
+    let _brightness = 255
+    let neopixel_buf = pins.createBuffer(16 * 3);
+    for (let i = 0; i < 16 * 3; i++) {
+        neopixel_buf[i] = 0
+    }
+   /**
+    * 红外
+    */
+    //% advanced=true shim=maqueenIRV2::irCode
+    function irCode(): number {
+        return 0;
+    }
+    
+    //% weight=86
+    //% blockId=IR_read block="read IR key value"
+    export function IR_read(): number {
+        pins.setPull(DigitalPin.P13, PinPullMode.PullUp)
+        return irCode()&0x00ff;
+    }
+
+    //% weight=85
+    //% blockId=IR_callbackUser block="on IR received"
+    //% draggableParameters
+    export function IR_callbackUser(cb: (message: number) => void) {
+        pins.setPull(DigitalPin.P13, PinPullMode.PullUp)
+        state = 1;
+        control.onEvent(11, 22, function() {
+            cb(irstate)
+        }) 
+    }
+    
+    basic.forever(() => {
+        if(state == 1){
+            irstate = irCode()&0x00ff;
+            if(irstate != -1){
+                control.raiseEvent(11, 22)
+            }
+        }
+        
+        basic.pause(20);
+    })
+     /** 
+     * Set the three primary color:red, green, and blue
      */
-    //% block="HT7K1311 Motor Forward"
-    //% blockGap=8
-    export function motorForward(): void {
-        if (!initialized) init();
-        digitalWrite(11, true);   // IN1 = HIGH
-        digitalWrite(12, false);  // IN2 = LOW
+    //% weight=84
+    //% r.min=0 r.max=255
+    //% g.min=0 g.max=255
+    //% b.min=0 b.max=255
+    //%  block="red|%r green|%g blue|%b"
+    export function rgb(r: number, g: number, b: number): number {
+        return (r << 16) + (g << 8) + (b);
     }
 
     /**
-     * 控制 HT7K1311 电机：反转
-     * IN1 = LOW, IN2 = HIGH
+     * RGB LEDs light up from A to B 
      */
-    //% block="HT7K1311 Motor Reverse"
-    //% blockGap=8
-    export function motorReverse(): void {
-        if (!initialized) init();
-        digitalWrite(11, false);  // IN1 = LOW
-        digitalWrite(12, true);   // IN2 = HIGH
+    //% weight=83
+    //% from.min=0 from.max=1
+    //% to.min=0 to.max=1
+    //% to.defl=1
+    //% from.defl=0
+    //%  block="RGB LEDs |%from to|%to"
+    export function ledRange(from: number, to: number): number {
+        let _from=from;
+        let _to=to+1;
+        return (_from << 16) + (2 << 8) + (_to);
+    }
+    /**
+     * Set the color of the specified LEDs
+     */
+    //% weight=82
+    //% index.min=0 index.max=1
+    //% index.defl=0
+    //% rgb.shadow="colorNumberPicker"
+    //%  block="RGB LED |%index show color|%rgb"
+    export function setIndexColor(index: number, rgb: number) {
+        let f = index;
+        let t = index;
+        let r = (rgb >> 16) * (_brightness / 255);
+        let g = ((rgb >> 8) & 0xFF) * (_brightness / 255);
+        let b = ((rgb) & 0xFF) * (_brightness / 255);
+
+        if ((index) > 15) {
+            if ((((index) >> 8) & 0xFF) == 0x02) {
+                f = (index) >> 16;
+                t = (index) & 0xff;
+            } else {
+                f = 0;
+                t = -1;
+            }
+        }
+        for (let i = f; i <= t; i++) {
+            neopixel_buf[i * 3 + 0] = Math.round(g)
+            neopixel_buf[i * 3 + 1] = Math.round(r)
+            neopixel_buf[i * 3 + 2] = Math.round(b)
+        }
+        ws2812b.sendBuffer(neopixel_buf, DigitalPin.P15)
+
+    }
+    /**
+        * Set the color of all RGB LEDs
+        */
+    //% weight=81
+    //% rgb.shadow="colorNumberPicker"
+    //%  block="show color |%rgb"
+    export function showColor(rgb: number) {
+        let r = (rgb >> 16) * (_brightness / 255);
+        let g = ((rgb >> 8) & 0xFF) * (_brightness / 255);
+        let b = ((rgb) & 0xFF) * (_brightness / 255);
+        for (let i = 0; i < 16 * 3; i++) {
+            if ((i % 3) == 0)
+                neopixel_buf[i] = Math.round(g)
+            if ((i % 3) == 1)
+                neopixel_buf[i] = Math.round(r)
+            if ((i % 3) == 2)
+                neopixel_buf[i] = Math.round(b)
+        }
+        ws2812b.sendBuffer(neopixel_buf, DigitalPin.P15)
+    }
+    /**
+     * Set the brightness of RGB LED
+     */
+    //% weight=80
+    //% brightness.min=0 brightness.max=255
+    //% block="set brightness to |%brightness"
+    export function setBrightness(brightness: number) {
+        _brightness = brightness;
+    }
+    /**
+     * Turn off all RGB LEDs
+     */
+    //% weight=79
+    //%  block="clear all LEDs"
+    export function ledBlank() {
+        showColor(0)
     }
 
-    /**
-     * 控制 HT7K1311 电机：停止（刹车）
-     * IN1 = LOW, IN2 = LOW
-     */
-    //% block="HT7K1311 Motor Stop"
-    //% blockGap=8
-    export function motorStop(): void {
-        if (!initialized) init();
-        digitalWrite(11, false);
-        digitalWrite(12, false);
+    //% weight=78
+    //% block="init %sensor temperature and humidity sensor"
+    export function tempHumiInit(sensor:SENSOR){
+        basic.pause(30);
+        if(sensor == SENSOR.AHT20){
+            pins.i2cWriteNumber(0x38, 0xBA, NumberFormat.Int8LE);
+            let data=pins.i2cReadNumber(0x38, NumberFormat.Int8LE);
+            if((data & 0x08) != 1){
+            let buf=pins.createBuffer(3)
+                buf[0]=0xBE;
+                buf[1]=0X08;
+                buf[2]=0x00;
+                pins.i2cWriteBuffer(0x38, buf)
+            }
+        } else {
+            pins.i2cWriteBuffer(0x70, pins.createBufferFromArray(wordToByte(0x3517)));
+            basic.pause(5);  //wake up
+            pins.i2cWriteBuffer(0x70, pins.createBufferFromArray(wordToByte(0x805D)));
+            basic.pause(5);  //soft reset
+            // pins.i2cWriteBuffer(0x70, pins.createBufferFromArray(wordToByte(0xB098)));
+            // basic.pause(5);  //sleep
+            while(1) {
+                if(getShtc3DeviceID() != 0) {
+                    break;
+                }
+                basic.pause(1000);
+            }
+
+        }
+        
     }
+    /**
+     * 获取温湿度数据
+     */
+    //% weight=77
+    //% block="read %sensor %state"
+    export function readSensor(sensor:SENSOR, state:PARA): number{
+        let data;
+        if(sensor == SENSOR.AHT20) {
+            let buf=pins.createBuffer(3);
+            buf[0]=0xAC;
+            buf[1]=0X33;
+            buf[2]=0x00;
+            pins.i2cWriteBuffer(0x38, buf);
+            let buf1=pins.i2cReadBuffer(0x38, 7);
+            switch(state){
+                case PARA.HUM:data=((buf1[1] << 12) + (buf1[2] << 4) + (buf1[3] >> 4)) / 1048576 * 100, 2;break;
+                case PARA.TEMP:data=(((buf1[3] & 0x0f) << 16) + (buf1[4] << 8) + (buf1[5])) / 1048576 * 200 - 50
+                    , 2;break;
+                
+                default:break;
+            }
+        } else {
+            switch(state){
+                case PARA.HUM:data = getShtc3Humidity(0x7866); break;
+                case PARA.TEMP:data = getShtc3Temperature(0x7CA2); break;
+                default: break;
+            }
+        }
+        
+        return Math.round(data);
+    }
+
+    // // advanced=true shim=i2c::init
+    // function init(): void {
+    //     return;
+    // }
+    
+    /**
+     * init I2C
+     */
+    //% block="init xia_mi Board"
+    //% weight=101
+    export function initXiaMiBoard():void{
+        //init();
+        basic.pause(30)
+        // AHT20Init()
+        basic.pause(30)
+        initDisplay()
+
+    }
+
+    //% block="Correct data %data by %len bits"
+    //%weight=2
+    export function alignment(data: number ,len: ALIGNMENT):string{
+        let _data = data.toString();
+        if (len > _data.length){
+            let j = (len - _data.length)
+            for (let i = 0; i < j;i++){
+                _data = ' ' + _data;
+            }   
+        }else{
+            _data = _data.slice(0, len);
+        }
+        return _data;
+    }
+
+    function getShtc3DeviceID(): number {
+        let id1 = 0;
+        let id = 0;
+        pins.i2cWriteBuffer(0x70, pins.createBufferFromArray(wordToByte(0xEFC8)));
+        basic.pause(15);
+        let idArray = pins.i2cReadBuffer(0x70, 3);
+        if(checkShtcCrc(idArray[0], idArray[1], idArray[2])){
+            id1 = (idArray[0] << 8 ) | idArray[1];
+            if((id1 & 0x807) == 0x807){
+                id = id1;
+            } else{
+                id = 0;
+            }
+        } else{
+            id = 0 ;
+        }
+        return id;
+    }
+
+    function getShtc3Humidity(mode: number): number{
+        let data;
+        while(1){
+            data = getShtcTandRHRawData(mode);
+            if (data[2] == 1) {
+                break;
+            }
+            basic.pause(1000);
+        }
+        return (data[1] * 100.0) / 65536;
+    }
+
+    function getShtc3Temperature(mode: number): number{
+        let data;
+        while(1){
+            data = getShtcTandRHRawData(mode);
+            if (data[2] == 1) {
+                break;
+            }
+            basic.pause(1000);
+        }
+        return -45 + 175 * (data[0] / 65536);
+    }
+
+    function getShtcTandRHRawData(mode: number): number[]{
+        let temp: number[] = [0, 0, 0];
+        pins.i2cWriteBuffer(0x70, pins.createBufferFromArray(wordToByte(mode)));
+        basic.pause(15);
+        let data = pins.i2cReadBuffer(0x70, 6);
+        if(checkShtcCrc(data[0], data[1], data[2]) && checkShtcCrc(data[3], data[4], data[5])){
+            temp[0] = ( data[0] << 8 ) | data[1]; //temp
+            temp[1] = ( data[3] << 8 ) | data[4]; //humi
+            temp[2] = 1;
+        }
+        return temp;
+    }
+
+    function checkShtcCrc(data1: number, data2: number, crcValue: number): boolean{
+        let crc = 0xFF;
+        let crcData = [data1, data2];
+        let ret = true;
+        for(let i = 0; i < 2; i++ ){
+            crc ^= crcData[i];
+            for(let bit = 8; bit > 0; --bit){
+                if(crc & 0x80){
+                    crc = (( crc << 1 ) & 0xff) ^ 0x31;
+                } else{
+                    crc = ((crc << 1) & 0xff);
+                }
+            }
+        }
+        if(crc != crcValue){
+            ret = false;
+        }
+        return ret;
+    }
+
+
+    function wordToByte(reg: number): number[] {
+        return [reg >> 8, reg & 0xff];
+    }
+
 }
